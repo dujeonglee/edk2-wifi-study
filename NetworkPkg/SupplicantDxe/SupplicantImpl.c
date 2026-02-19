@@ -699,7 +699,7 @@ SupplicantSetData (
       DEBUG ((DEBUG_INFO, "[Supplicant] Station MAC set\n"));
       return EFI_SUCCESS;
 
-    case EfiSupplicant80211TargetBSSID:
+    case EfiSupplicant80211TargetSSIDMac:
       //
       // Set target AP BSSID (AA)
       //

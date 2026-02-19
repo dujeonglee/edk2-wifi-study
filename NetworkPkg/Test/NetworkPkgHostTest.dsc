@@ -32,6 +32,7 @@
       UefiRuntimeServicesTableLib|MdePkg/Test/Mock/Library/GoogleTest/MockUefiRuntimeServicesTableLib/MockUefiRuntimeServicesTableLib.inf
       UefiBootServicesTableLib|MdePkg/Test/Mock/Library/GoogleTest/MockUefiBootServicesTableLib/MockUefiBootServicesTableLib.inf
   }
+  NetworkPkg/SupplicantDxe/GoogleTest/SupplicantDxeGoogleTest.inf
 
 # Despite these library classes being listed in [LibraryClasses] below, they are not needed for the host-based unit tests.
 [LibraryClasses]

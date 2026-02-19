@@ -1,0 +1,52 @@
+## @file
+#  Unit test suite for SupplicantDxe using Google Test.
+#
+#  Tests WPA2/WPA3 supplicant functionality including:
+#  - Cryptographic primitives (AES-CMAC, AES Key Wrap, HMAC-SHA1, PRF, KDF, CCMP)
+#  - EAPOL 4-Way Handshake state machine and message processing
+#  - EFI_SUPPLICANT_PROTOCOL SetData/GetData implementation
+#
+#  Copyright (c) 2024, Intel Corporation. All rights reserved.<BR>
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+##
+
+[Defines]
+  INF_VERSION         = 0x00010017
+  BASE_NAME           = SupplicantDxeGoogleTest
+  FILE_GUID           = 7E3B5A4C-2D1F-48A6-B9C7-E5F4D3A2B1C0
+  VERSION_STRING      = 1.0
+  MODULE_TYPE         = HOST_APPLICATION
+
+#
+# The following information is for reference only and not required by the build tools.
+#
+#  VALID_ARCHITECTURES = IA32 X64 AARCH64
+#
+
+[Sources]
+  SupplicantDxeGoogleTest.cpp
+  WpaEapolGoogleTest.cpp
+  SupplicantImplGoogleTest.cpp
+  ../WpaCrypto.c
+  ../WpaEapol.c
+  ../WpaSae.c
+  ../SupplicantImpl.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  UnitTestFrameworkPkg/UnitTestFrameworkPkg.dec
+  NetworkPkg/NetworkPkg.dec
+  CryptoPkg/CryptoPkg.dec
+
+[LibraryClasses]
+  GoogleTestLib
+  BaseLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  DebugLib
+  BaseCryptLib
+
+[Protocols]
+  gEfiSupplicantProtocolGuid

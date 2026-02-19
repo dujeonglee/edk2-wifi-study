@@ -24,6 +24,7 @@
 
 #include <Protocol/Supplicant.h>
 #include <Protocol/WiFi2.h>
+#include <Protocol/EapManagement.h>
 
 #include "WpaCommon.h"
 #include "WpaCrypto.h"
