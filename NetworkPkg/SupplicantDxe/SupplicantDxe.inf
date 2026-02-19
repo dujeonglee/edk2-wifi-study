@@ -1,0 +1,59 @@
+## @file
+#  WPA2/WPA3 Personal Supplicant DXE Driver.
+#
+#  This module implements the EFI Supplicant Protocol for WPA2-Personal (PSK)
+#  and WPA3-Personal (SAE) authentication. It provides:
+#  - PBKDF2-SHA1 passphrase-to-PMK derivation (WPA2)
+#  - SAE (Dragonfly) key exchange on ECC Group 19 (WPA3)
+#  - IEEE 802.11 4-Way Handshake (EAPOL-Key)
+#  - Group Key Handshake
+#  - CCMP (AES-CCM) data frame encryption/decryption
+#
+#  Copyright (c) 2024, Intel Corporation. All rights reserved.<BR>
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+##
+
+[Defines]
+  INF_VERSION               = 0x00010005
+  BASE_NAME                 = SupplicantDxe
+  FILE_GUID                 = A2B45F9E-3C7D-4E1A-B8F6-7D2E5A6C8B01
+  MODULE_TYPE               = DXE_DRIVER
+  VERSION_STRING            = 1.0
+  ENTRY_POINT               = SupplicantDxeDriverEntryPoint
+  UNLOAD_IMAGE              = SupplicantDxeDriverUnload
+
+[Sources]
+  SupplicantDxe.h
+  WpaCommon.h
+  WpaCrypto.h
+  WpaCrypto.c
+  WpaEapol.h
+  WpaEapol.c
+  WpaSae.h
+  WpaSae.c
+  SupplicantDriver.c
+  SupplicantImpl.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  NetworkPkg/NetworkPkg.dec
+  CryptoPkg/CryptoPkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  MemoryAllocationLib
+  BaseMemoryLib
+  BaseLib
+  UefiLib
+  DebugLib
+  BaseCryptLib
+
+[Protocols]
+  gEfiSupplicantProtocolGuid                    ## PRODUCES
+
+[Depex]
+  TRUE
