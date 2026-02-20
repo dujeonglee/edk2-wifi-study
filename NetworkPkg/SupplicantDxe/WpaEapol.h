@@ -112,4 +112,19 @@ WpaEapolReset (
   IN SUPPLICANT_PRIVATE_DATA  *Private
   );
 
+/**
+  Update the KeyDescVersion field based on the current AKM and pairwise cipher.
+
+  Call this whenever AkmSuiteType or PairwiseCipherType changes.
+    Version 0 — AKM-defined (WPA3-SAE, PSK-SHA256)
+    Version 1 — HMAC-MD5 MIC, RC4 key wrap (WPA1/TKIP)
+    Version 2 — HMAC-SHA1-128 MIC, AES Key Wrap (WPA2/CCMP)
+
+  @param[in,out]  Private  Supplicant private data.
+**/
+VOID
+UpdateKeyDescVersion (
+  IN OUT SUPPLICANT_PRIVATE_DATA  *Private
+  );
+
 #endif // WPA_EAPOL_H_

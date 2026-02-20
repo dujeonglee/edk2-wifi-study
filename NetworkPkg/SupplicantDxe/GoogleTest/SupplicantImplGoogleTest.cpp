@@ -431,7 +431,7 @@ TEST_F (SupplicantImplTest, GetSupportedCipherSuites)
       Buffer, &Size));
 
   UINT16  Count = *(UINT16 *)Buffer;
-  EXPECT_EQ (2, Count);  // CCMP, BIP
+  EXPECT_EQ (5, Count);  // CCMP, BIP, TKIP, WEP-40, WEP-104
 }
 
 TEST_F (SupplicantImplTest, GetHardwareCipherSuitesSameAsSoftware)
@@ -498,7 +498,7 @@ TEST_F (SupplicantImplTest, GetPmkBufferTooSmall)
 // ==========================================================================
 TEST_F (SupplicantImplTest, GetPtkNotReadyWhenInvalid)
 {
-  UINTN  Size = sizeof (WPA_PTK);
+  UINTN  Size = WPA_PTK_LEN;
 
   EXPECT_FALSE (Private->PtkValid);
   EXPECT_EQ (EFI_NOT_READY,
@@ -638,7 +638,7 @@ TEST_F (SupplicantImplTest, SetPtkDirect)
 {
   EFI_SUPPLICANT_KEY  SupKey;
   ZeroMem (&SupKey, sizeof (SupKey));
-  SupKey.KeyLen = sizeof (WPA_PTK);
+  SupKey.KeyLen = WPA_PTK_LEN;
   SetMem (SupKey.Key, SupKey.KeyLen, 0xAB);
 
   EXPECT_EQ (EFI_SUCCESS,

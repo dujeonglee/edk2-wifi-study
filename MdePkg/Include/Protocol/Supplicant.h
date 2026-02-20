@@ -150,6 +150,11 @@ typedef enum {
   // 802.11 PMK. The corresponding Data is 32 bytes pairwise master key.
   //
   EfiSupplicant80211PMK,
+  //
+  // 802.11 WEP key. The corresponding Data is of type EFI_SUPPLICANT_KEY
+  // with KeyLen 5 (WEP-40) or 13 (WEP-104). KeyIndex selects key slot 0-3.
+  //
+  EfiSupplicant80211WepKey,
   EfiSupplicantDataTypeMaximum
 } EFI_SUPPLICANT_DATA_TYPE;
 

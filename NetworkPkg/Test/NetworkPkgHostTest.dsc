@@ -73,6 +73,7 @@
   FileExplorerLib|MdeModulePkg/Library/FileExplorerLib/FileExplorerLib.inf
   SortLib|MdeModulePkg/Library/UefiSortLib/UefiSortLib.inf
   IntrinsicLib|CryptoPkg/Library/IntrinsicLib/IntrinsicLib.inf
+  SynchronizationLib|MdePkg/Library/BaseSynchronizationLib/BaseSynchronizationLib.inf
 
 !if $(TOOL_CHAIN_TAG) == VS2019 or $(TOOL_CHAIN_TAG) == VS2022 or $(TOOL_CHAIN_TAG) == VS2026
 [LibraryClasses.X64]
@@ -91,6 +92,15 @@
 
 [LibraryClasses.RISCV64]
   RngLib|MdePkg/Library/BaseRngLibTimerLib/BaseRngLibTimerLib.inf
+
+# macOS Apple Silicon: XCODE5 AARCH64 HOST_APPLICATION linker overrides.
+# These replace the firmware-targeted DLINK_FLAGS with native arm64-apple-darwin
+# settings so the test binaries execute on the host machine.
+[BuildOptions.AARCH64.EDKII.HOST_APPLICATION]
+  XCODE:*_*_AARCH64_DLINK_PATH == clang
+  XCODE:*_*_AARCH64_DLINK_FLAGS == -arch arm64 -target arm64-apple-darwin -o $(BIN_DIR)/$(MODULE_NAME_GUID) -Wl,-dead_strip
+  XCODE:*_*_AARCH64_CC_FLAGS = -target arm64-apple-darwin -D UNIT_TESTING_DEBUG=1 -O0 -fexceptions
+  XCODE:*_*_AARCH64_ASM_FLAGS == -arch arm64 -g
 
 [PcdsFixedAtBuild]
   gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0x2

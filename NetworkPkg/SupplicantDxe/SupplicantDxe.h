@@ -37,16 +37,21 @@
 // Maximum supported AKM suites
 //
 #define MAX_SUPPORTED_AKM_SUITES     4
-#define MAX_SUPPORTED_CIPHER_SUITES  4
+#define MAX_SUPPORTED_CIPHER_SUITES  5
 
 ///
-/// PTK (Pairwise Transient Key) decomposition
+/// PTK raw byte-offset accessors.
+/// PtkRaw layout:
+///   [0:16)   KCK (Key Confirmation Key)
+///   [16:32)  KEK (Key Encryption Key)
+///   [32:48)  TK  (Temporal Key) — for CCMP this is the full TK; for TKIP
+///            this is only the first 16 bytes; bytes [48:64) hold TX-MIC/RX-MIC
+///   [48:56)  TX-MIC (TKIP only)
+///   [56:64)  RX-MIC (TKIP only)
 ///
-typedef struct {
-  UINT8    Kck[WPA_KCK_LEN];   ///< Key Confirmation Key
-  UINT8    Kek[WPA_KEK_LEN];   ///< Key Encryption Key
-  UINT8    Tk[WPA_TK_LEN];     ///< Temporal Key
-} WPA_PTK;
+#define PTK_KCK(p)  ((p)->PtkRaw + 0)
+#define PTK_KEK(p)  ((p)->PtkRaw + WPA_KCK_LEN)
+#define PTK_TK(p)   ((p)->PtkRaw + WPA_KCK_LEN + WPA_KEK_LEN)
 
 ///
 /// GTK entry
@@ -107,7 +112,7 @@ struct _SUPPLICANT_PRIVATE_DATA {
   UINT8                       ANonce[WPA_NONCE_LEN];
   UINT8                       SNonce[WPA_NONCE_LEN];
   UINT8                       ReplayCounter[WPA_REPLAY_CTR_LEN];
-  WPA_PTK                     Ptk;
+  UINT8                       PtkRaw[WPA_PTK_TKIP_LEN];  ///< Raw PTK storage (64 bytes)
   BOOLEAN                     PtkValid;
 
   //
@@ -136,7 +141,14 @@ struct _SUPPLICANT_PRIVATE_DATA {
   UINT8                       TxPn[CCMP_PN_LEN];
 
   //
-  // Key descriptor version determined by AKM
+  // WEP key storage (up to 4 keys, for WEP-40 or WEP-104)
+  //
+  WPA_WEP_KEY                 WepKeys[4];
+  UINT8                       WepDefaultKeyId;
+  BOOLEAN                     WepKeysValid;
+
+  //
+  // Key descriptor version determined by AKM / pairwise cipher
   //
   UINT8                       KeyDescVersion;
 };

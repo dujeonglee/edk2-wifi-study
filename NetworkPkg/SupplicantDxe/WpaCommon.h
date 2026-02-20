@@ -120,6 +120,41 @@
 #define AES_BLOCK_SIZE   16
 
 //
+// TKIP key sizes
+// PTK layout: KCK(16) + KEK(16) + TK(16) + TX-MIC(8) + RX-MIC(8) = 64 bytes
+//
+#define WPA_TK_TKIP_LEN       32   // TKIP temporal key (TK + TX-MIC + RX-MIC)
+#define WPA_PTK_TKIP_LEN      64   // KCK + KEK + TK_TKIP (full TKIP PTK)
+#define WPA_TK_TX_MIC_OFFSET  16   // TX-MIC starts at byte 16 of TK_TKIP
+#define WPA_TK_RX_MIC_OFFSET  24   // RX-MIC starts at byte 24 of TK_TKIP
+
+//
+// TKIP frame format constants
+//
+#define TKIP_HEADER_LEN   8    // TSC1, WEPSeed, TSC0, ExtIV flag, TSC2..TSC5
+#define TKIP_MIC_LEN      8    // Michael MIC
+#define TKIP_ICV_LEN      4    // CRC-32 ICV
+
+//
+// WEP key and frame size constants
+//
+#define WEP40_KEY_LEN     5
+#define WEP104_KEY_LEN   13
+#define WEP_IV_LEN        3
+#define WEP_KEYID_LEN     1
+#define WEP_ICV_LEN       4
+#define WEP_HEADER_LEN    4    // IV(3) + KeyID(1)
+#define WEP_MAX_KEY_LEN  13    // max(WEP40_KEY_LEN, WEP104_KEY_LEN)
+
+///
+/// WEP key storage entry
+///
+typedef struct {
+  UINT8    KeyLen;
+  UINT8    Key[WEP_MAX_KEY_LEN];
+} WPA_WEP_KEY;
+
+//
 // PBKDF2 parameters for WPA2 PSK
 //
 #define WPA2_PBKDF2_ITERATIONS  4096

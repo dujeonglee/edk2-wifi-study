@@ -27,13 +27,18 @@ STATIC EFI_80211_AKM_SUITE_SELECTOR  mSupportedAkmSuites = {
 };
 
 //
-// Supported cipher suites (reported via GetData)
+// Supported cipher suites (reported via GetData).
+// Includes CCMP, BIP (mandatory), plus TKIP, WEP-40, WEP-104 (legacy).
+// WARNING: TKIP and WEP are broken; listed only for legacy interoperability.
 //
 STATIC EFI_80211_CIPHER_SUITE_SELECTOR  mSupportedCipherSuites = {
-  2,                          // Count: CCMP, BIP
+  5,                          // Count: CCMP, BIP, TKIP, WEP-40, WEP-104
   {
-    { { WPA_RSN_OUI_BYTE0, WPA_RSN_OUI_BYTE1, WPA_RSN_OUI_BYTE2 }, WPA_CIPHER_SUITE_CCMP },
-    { { WPA_RSN_OUI_BYTE0, WPA_RSN_OUI_BYTE1, WPA_RSN_OUI_BYTE2 }, WPA_CIPHER_SUITE_BIP }
+    { { WPA_RSN_OUI_BYTE0, WPA_RSN_OUI_BYTE1, WPA_RSN_OUI_BYTE2 }, WPA_CIPHER_SUITE_CCMP   },
+    { { WPA_RSN_OUI_BYTE0, WPA_RSN_OUI_BYTE1, WPA_RSN_OUI_BYTE2 }, WPA_CIPHER_SUITE_BIP    },
+    { { WPA_RSN_OUI_BYTE0, WPA_RSN_OUI_BYTE1, WPA_RSN_OUI_BYTE2 }, WPA_CIPHER_SUITE_TKIP   },
+    { { WPA_RSN_OUI_BYTE0, WPA_RSN_OUI_BYTE1, WPA_RSN_OUI_BYTE2 }, WPA_CIPHER_SUITE_WEP40  },
+    { { WPA_RSN_OUI_BYTE0, WPA_RSN_OUI_BYTE1, WPA_RSN_OUI_BYTE2 }, WPA_CIPHER_SUITE_WEP104 }
   }
 };
 
@@ -445,7 +450,7 @@ SupplicantProcessPacket (
     CopyMem (Result, Data, HeaderLen);
 
     if (!WpaCcmpEncrypt (
-           Private->Ptk.Tk,
+           PTK_TK (Private),
            Private->TxPn,
            Data + 10,  // Source address (A2) at offset 10 in 802.11 header
            0,          // Priority
@@ -512,7 +517,7 @@ SupplicantProcessPacket (
     Result[1] &= ~0x40;
 
     if (!WpaCcmpDecrypt (
-           Private->Ptk.Tk,
+           PTK_TK (Private),
            Pn,
            Data + 10,  // Source address (A2)
            0,
@@ -598,13 +603,9 @@ SupplicantSetData (
       Private->AkmSuiteType = SuiteSelector->SuiteType;
 
       //
-      // Update key descriptor version based on AKM
+      // Update key descriptor version based on AKM and current pairwise cipher.
       //
-      if (Private->AkmSuiteType == WPA_AKM_SUITE_PSK) {
-        Private->KeyDescVersion = WPA_KEY_DESC_VERSION_HMAC_SHA1_AES;
-      } else {
-        Private->KeyDescVersion = WPA_KEY_DESC_VERSION_AKM_DEFINED;
-      }
+      UpdateKeyDescVersion (Private);
 
       DEBUG ((DEBUG_INFO, "[Supplicant] AKM suite set: type=%d\n", Private->AkmSuiteType));
 
@@ -626,6 +627,21 @@ SupplicantSetData (
       SuiteSelector = (EFI_80211_SUITE_SELECTOR *)Data;
       CopyMem (Private->PairwiseCipherOui, SuiteSelector->Oui, 3);
       Private->PairwiseCipherType = SuiteSelector->SuiteType;
+
+      //
+      // TKIP and WEP are broken; emit a warning when selected.
+      //
+      if ((Private->PairwiseCipherType == WPA_CIPHER_SUITE_TKIP) ||
+          (Private->PairwiseCipherType == WPA_CIPHER_SUITE_WEP40) ||
+          (Private->PairwiseCipherType == WPA_CIPHER_SUITE_WEP104))
+      {
+        DEBUG ((DEBUG_WARN,
+          "[Supplicant] Insecure pairwise cipher selected (type=%d). "
+          "Use CCMP for new deployments.\n",
+          Private->PairwiseCipherType));
+      }
+
+      UpdateKeyDescVersion (Private);
 
       DEBUG ((DEBUG_INFO, "[Supplicant] Pairwise cipher set: type=%d\n",
         Private->PairwiseCipherType));
@@ -733,8 +749,9 @@ SupplicantSetData (
       }
 
       SupKey = (EFI_SUPPLICANT_KEY *)Data;
-      if (SupKey->KeyLen > 0 && SupKey->KeyLen <= sizeof (Private->Ptk)) {
-        CopyMem (&Private->Ptk, SupKey->Key, SupKey->KeyLen);
+      if ((SupKey->KeyLen > 0) && (SupKey->KeyLen <= WPA_PTK_TKIP_LEN)) {
+        ZeroMem (Private->PtkRaw, sizeof (Private->PtkRaw));
+        CopyMem (Private->PtkRaw, SupKey->Key, SupKey->KeyLen);
         Private->PtkValid = TRUE;
       }
 
@@ -787,6 +804,40 @@ SupplicantSetData (
       }
 
       return EFI_SUCCESS;
+
+    case EfiSupplicant80211WepKey:
+    {
+      //
+      // Install a WEP key.
+      // Caller provides an EFI_SUPPLICANT_KEY with:
+      //   KeyLen  = 5 (WEP-40) or 13 (WEP-104)
+      //   KeyIndex = key slot (0-3)
+      //   Key[]   = key material
+      //
+      UINT8  WepKeyId;
+
+      if ((Data == NULL) || (DataSize < sizeof (EFI_SUPPLICANT_KEY))) {
+        return EFI_INVALID_PARAMETER;
+      }
+
+      SupKey   = (EFI_SUPPLICANT_KEY *)Data;
+      WepKeyId = SupKey->KeyId & 0x03;
+
+      if ((SupKey->KeyLen != WEP40_KEY_LEN) && (SupKey->KeyLen != WEP104_KEY_LEN)) {
+        return EFI_INVALID_PARAMETER;
+      }
+
+      Private->WepKeys[WepKeyId].KeyLen = (UINT8)SupKey->KeyLen;
+      CopyMem (Private->WepKeys[WepKeyId].Key, SupKey->Key, SupKey->KeyLen);
+      Private->WepDefaultKeyId = WepKeyId;
+      Private->WepKeysValid    = TRUE;
+
+      DEBUG ((DEBUG_WARN,
+        "[Supplicant] WEP key installed (slot=%d, len=%d). "
+        "WEP is insecure; use CCMP.\n",
+        WepKeyId, SupKey->KeyLen));
+      return EFI_SUCCESS;
+    }
 
     default:
       return EFI_UNSUPPORTED;
@@ -870,13 +921,20 @@ SupplicantGetData (
         return EFI_NOT_READY;
       }
 
-      RequiredSize = sizeof (WPA_PTK);
+      //
+      // Return the appropriate PTK length based on cipher type:
+      // TKIP uses 64 bytes (includes TX-MIC and RX-MIC), others use 48.
+      //
+      RequiredSize = (Private->PairwiseCipherType == WPA_CIPHER_SUITE_TKIP)
+                       ? WPA_PTK_TKIP_LEN
+                       : WPA_PTK_LEN;
+
       if ((Data == NULL) || (*DataSize < RequiredSize)) {
         *DataSize = RequiredSize;
         return EFI_BUFFER_TOO_SMALL;
       }
 
-      CopyMem (Data, &Private->Ptk, RequiredSize);
+      CopyMem (Data, Private->PtkRaw, RequiredSize);
       *DataSize = RequiredSize;
       return EFI_SUCCESS;
 
@@ -946,6 +1004,30 @@ SupplicantGetData (
 
       *DataSize = RequiredSize;
       return EFI_SUCCESS;
+
+    case EfiSupplicant80211WepKey:
+    {
+      //
+      // Return the default WEP key material.
+      //
+      UINT8  WepKeyId;
+
+      if (!Private->WepKeysValid) {
+        return EFI_NOT_READY;
+      }
+
+      WepKeyId     = Private->WepDefaultKeyId;
+      RequiredSize = Private->WepKeys[WepKeyId].KeyLen;
+
+      if ((Data == NULL) || (*DataSize < RequiredSize)) {
+        *DataSize = RequiredSize;
+        return EFI_BUFFER_TOO_SMALL;
+      }
+
+      CopyMem (Data, Private->WepKeys[WepKeyId].Key, RequiredSize);
+      *DataSize = RequiredSize;
+      return EFI_SUCCESS;
+    }
 
     default:
       return EFI_UNSUPPORTED;

@@ -93,6 +93,27 @@ GetEapolKeyMessageType (
 }
 
 /**
+  Update the KeyDescVersion field based on the current AKM and pairwise cipher.
+
+  @param[in,out]  Private  Supplicant private data.
+**/
+VOID
+UpdateKeyDescVersion (
+  IN OUT SUPPLICANT_PRIVATE_DATA  *Private
+  )
+{
+  if ((Private->AkmSuiteType == WPA_AKM_SUITE_PSK_SHA256) ||
+      (Private->AkmSuiteType == WPA_AKM_SUITE_SAE))
+  {
+    Private->KeyDescVersion = WPA_KEY_DESC_VERSION_AKM_DEFINED;
+  } else if (Private->PairwiseCipherType == WPA_CIPHER_SUITE_TKIP) {
+    Private->KeyDescVersion = WPA_KEY_DESC_VERSION_HMAC_MD5_RC4;
+  } else {
+    Private->KeyDescVersion = WPA_KEY_DESC_VERSION_HMAC_SHA1_AES;
+  }
+}
+
+/**
   Compute EAPOL-Key MIC based on the configured key descriptor version.
 
   @param[in]   Private   Supplicant private data.
@@ -112,25 +133,25 @@ ComputeEapolMic (
   OUT UINT8                    *Mic
   )
 {
-  switch (Private->AkmSuiteType) {
-    case WPA_AKM_SUITE_PSK:
+  switch (Private->KeyDescVersion) {
+    case WPA_KEY_DESC_VERSION_HMAC_MD5_RC4:
       //
-      // Key Descriptor Version 2: HMAC-SHA1-128
+      // Key Descriptor Version 1 (WPA1/TKIP): HMAC-MD5
       //
-      return WpaHmacSha1Mic (Private->Ptk.Kck, Data, DataLen, Mic);
+      return WpaHmacMd5Mic (PTK_KCK (Private), WPA_KCK_LEN, Data, DataLen, Mic);
 
-    case WPA_AKM_SUITE_PSK_SHA256:
-    case WPA_AKM_SUITE_SAE:
+    case WPA_KEY_DESC_VERSION_HMAC_SHA1_AES:
       //
-      // AES-128-CMAC
+      // Key Descriptor Version 2 (WPA2/CCMP): HMAC-SHA1-128
       //
-      return WpaAesCmac (Private->Ptk.Kck, Data, DataLen, Mic);
+      return WpaHmacSha1Mic (PTK_KCK (Private), Data, DataLen, Mic);
 
+    case WPA_KEY_DESC_VERSION_AKM_DEFINED:
     default:
       //
-      // Default: try HMAC-SHA1-128 for backward compatibility
+      // AKM-defined (WPA3/PSK-SHA256): AES-128-CMAC
       //
-      return WpaHmacSha1Mic (Private->Ptk.Kck, Data, DataLen, Mic);
+      return WpaAesCmac (PTK_KCK (Private), Data, DataLen, Mic);
   }
 }
 
@@ -236,35 +257,52 @@ WpaDerivePtk (
   CopyMem (Data + 2 * WPA_MAC_ADDR_LEN, MinNonce, WPA_NONCE_LEN);
   CopyMem (Data + 2 * WPA_MAC_ADDR_LEN + WPA_NONCE_LEN, MaxNonce, WPA_NONCE_LEN);
 
+  UpdateKeyDescVersion (Private);
+
   switch (Private->AkmSuiteType) {
     case WPA_AKM_SUITE_PSK:
+      if (Private->PairwiseCipherType == WPA_CIPHER_SUITE_TKIP) {
+        //
+        // WPA1/TKIP: PRF-512 (64 bytes) — KCK(16)+KEK(16)+TK(16)+TX-MIC(8)+RX-MIC(8)
+        //
+        DEBUG ((DEBUG_WARN,
+          "[Supplicant] TKIP is a broken cipher; use CCMP instead.\n"));
+        return WpaPrfSha1 (
+                 Private->Pmk,
+                 WPA_PMK_LEN,
+                 "Pairwise key expansion",
+                 Data,
+                 sizeof (Data),
+                 Private->PtkRaw,
+                 WPA_PTK_TKIP_LEN
+                 );
+      }
+
       //
-      // WPA2-PSK: PRF-384 for CCMP
+      // WPA2-PSK/CCMP: PRF-384 (48 bytes)
       //
-      Private->KeyDescVersion = WPA_KEY_DESC_VERSION_HMAC_SHA1_AES;
       return WpaPrfSha1 (
                Private->Pmk,
                WPA_PMK_LEN,
                "Pairwise key expansion",
                Data,
                sizeof (Data),
-               (UINT8 *)&Private->Ptk,
+               Private->PtkRaw,
                WPA_PTK_LEN
                );
 
     case WPA_AKM_SUITE_PSK_SHA256:
     case WPA_AKM_SUITE_SAE:
       //
-      // WPA3/PSK-SHA256: KDF-384 (SHA256-based)
+      // WPA3/PSK-SHA256: KDF-384 (SHA256-based, 48 bytes)
       //
-      Private->KeyDescVersion = WPA_KEY_DESC_VERSION_AKM_DEFINED;
       return WpaKdfSha256 (
                Private->Pmk,
                WPA_PMK_LEN,
                "Pairwise key expansion",
                Data,
                sizeof (Data),
-               (UINT8 *)&Private->Ptk,
+               Private->PtkRaw,
                WPA_PTK_LEN * 8
                );
 
@@ -900,19 +938,45 @@ WpaEapolProcessKeyFrame (
         }
 
         //
-        // Decrypt key data using AES Key Unwrap with KEK
+        // Decrypt key data — method depends on KeyDescVersion.
+        // Version 1 (TKIP): RC4 with EAPOL-Key IV || KEK as the RC4 key,
+        //                    skipping the first 256 keystream bytes.
+        // Version 2/0 (CCMP/WPA3): AES Key Unwrap.
         //
         if (KeyDataLen > 0) {
-          DecryptedLen     = KeyDataLen - 8;
-          DecryptedKeyData = AllocatePool (DecryptedLen);
-          if (DecryptedKeyData == NULL) {
-            return EFI_OUT_OF_RESOURCES;
-          }
+          if (Private->KeyDescVersion == WPA_KEY_DESC_VERSION_HMAC_MD5_RC4) {
+            //
+            // RC4 decryption (WPA1/TKIP): no wrapping overhead, same size.
+            //
+            UINT8        Rc4Key[16 + WPA_KEK_LEN];
+            WPA_RC4_CTX  Rc4Ctx;
 
-          if (!WpaAesKeyUnwrap (Private->Ptk.Kek, KeyData, KeyDataLen, DecryptedKeyData)) {
-            DEBUG ((DEBUG_ERROR, "[Supplicant] Key data decryption failed\n"));
-            FreePool (DecryptedKeyData);
-            return EFI_SECURITY_VIOLATION;
+            DecryptedLen     = KeyDataLen;
+            DecryptedKeyData = AllocatePool (DecryptedLen);
+            if (DecryptedKeyData == NULL) {
+              return EFI_OUT_OF_RESOURCES;
+            }
+
+            CopyMem (Rc4Key, KeyFrame->EapolKeyIv, 16);
+            CopyMem (Rc4Key + 16, PTK_KEK (Private), WPA_KEK_LEN);
+            WpaRc4Init (&Rc4Ctx, Rc4Key, 16 + WPA_KEK_LEN);
+            WpaRc4Skip (&Rc4Ctx, 256);
+            WpaRc4Process (&Rc4Ctx, KeyData, DecryptedKeyData, KeyDataLen);
+          } else {
+            //
+            // AES Key Unwrap (WPA2 / WPA3).
+            //
+            DecryptedLen     = KeyDataLen - 8;
+            DecryptedKeyData = AllocatePool (DecryptedLen);
+            if (DecryptedKeyData == NULL) {
+              return EFI_OUT_OF_RESOURCES;
+            }
+
+            if (!WpaAesKeyUnwrap (PTK_KEK (Private), KeyData, KeyDataLen, DecryptedKeyData)) {
+              DEBUG ((DEBUG_ERROR, "[Supplicant] Key data decryption failed\n"));
+              FreePool (DecryptedKeyData);
+              return EFI_SECURITY_VIOLATION;
+            }
           }
 
           //
@@ -980,7 +1044,7 @@ WpaEapolProcessKeyFrame (
           return EFI_OUT_OF_RESOURCES;
         }
 
-        if (!WpaAesKeyUnwrap (Private->Ptk.Kek, KeyData, KeyDataLen, DecryptedKeyData)) {
+        if (!WpaAesKeyUnwrap (PTK_KEK (Private), KeyData, KeyDataLen, DecryptedKeyData)) {
           FreePool (DecryptedKeyData);
           return EFI_SECURITY_VIOLATION;
         }
@@ -1021,7 +1085,7 @@ WpaEapolReset (
 
   ZeroMem (Private->ANonce, sizeof (Private->ANonce));
   ZeroMem (Private->SNonce, sizeof (Private->SNonce));
-  ZeroMem (&Private->Ptk, sizeof (Private->Ptk));
+  ZeroMem (Private->PtkRaw, sizeof (Private->PtkRaw));
   ZeroMem (Private->Gtk, sizeof (Private->Gtk));
   ZeroMem (Private->Igtk, sizeof (Private->Igtk));
   ZeroMem (Private->TxPn, sizeof (Private->TxPn));

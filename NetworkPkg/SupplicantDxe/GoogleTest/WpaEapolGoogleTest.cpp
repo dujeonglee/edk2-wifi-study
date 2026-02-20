@@ -174,9 +174,9 @@ TEST_F (WpaPtkDerivationTest, Wpa2PskPtkDerivation)
   EXPECT_EQ (WPA_KEY_DESC_VERSION_HMAC_SHA1_AES, Private.KeyDescVersion);
 
   // PTK should be non-zero
-  UINT8  ZeroPtk[sizeof (WPA_PTK)];
+  UINT8  ZeroPtk[WPA_PTK_LEN];
   ZeroMem (ZeroPtk, sizeof (ZeroPtk));
-  EXPECT_NE (0, CompareMem (&Private.Ptk, ZeroPtk, sizeof (WPA_PTK)));
+  EXPECT_NE (0, CompareMem (Private.PtkRaw, ZeroPtk, WPA_PTK_LEN));
 }
 
 TEST_F (WpaPtkDerivationTest, Wpa3SaePtkDerivation)
@@ -186,9 +186,9 @@ TEST_F (WpaPtkDerivationTest, Wpa3SaePtkDerivation)
   EXPECT_TRUE (WpaDerivePtk (&Private));
   EXPECT_EQ (WPA_KEY_DESC_VERSION_AKM_DEFINED, Private.KeyDescVersion);
 
-  UINT8  ZeroPtk[sizeof (WPA_PTK)];
+  UINT8  ZeroPtk[WPA_PTK_LEN];
   ZeroMem (ZeroPtk, sizeof (ZeroPtk));
-  EXPECT_NE (0, CompareMem (&Private.Ptk, ZeroPtk, sizeof (WPA_PTK)));
+  EXPECT_NE (0, CompareMem (Private.PtkRaw, ZeroPtk, WPA_PTK_LEN));
 }
 
 TEST_F (WpaPtkDerivationTest, PskSha256PtkDerivation)
@@ -202,29 +202,29 @@ TEST_F (WpaPtkDerivationTest, PskSha256PtkDerivation)
 TEST_F (WpaPtkDerivationTest, DeterministicOutput)
 {
   // Same inputs should produce same PTK
-  WPA_PTK  Ptk1, Ptk2;
+  UINT8  Ptk1[WPA_PTK_LEN], Ptk2[WPA_PTK_LEN];
 
   EXPECT_TRUE (WpaDerivePtk (&Private));
-  CopyMem (&Ptk1, &Private.Ptk, sizeof (WPA_PTK));
+  CopyMem (Ptk1, Private.PtkRaw, WPA_PTK_LEN);
 
   EXPECT_TRUE (WpaDerivePtk (&Private));
-  CopyMem (&Ptk2, &Private.Ptk, sizeof (WPA_PTK));
+  CopyMem (Ptk2, Private.PtkRaw, WPA_PTK_LEN);
 
-  EXPECT_EQ (0, CompareMem (&Ptk1, &Ptk2, sizeof (WPA_PTK)));
+  EXPECT_EQ (0, CompareMem (Ptk1, Ptk2, WPA_PTK_LEN));
 }
 
 TEST_F (WpaPtkDerivationTest, DifferentNonceDifferentPtk)
 {
-  WPA_PTK  Ptk1;
+  UINT8  Ptk1[WPA_PTK_LEN];
 
   EXPECT_TRUE (WpaDerivePtk (&Private));
-  CopyMem (&Ptk1, &Private.Ptk, sizeof (WPA_PTK));
+  CopyMem (Ptk1, Private.PtkRaw, WPA_PTK_LEN);
 
   // Change SNonce
   SetMem (Private.SNonce, WPA_NONCE_LEN, 0xDD);
   EXPECT_TRUE (WpaDerivePtk (&Private));
 
-  EXPECT_NE (0, CompareMem (&Ptk1, &Private.Ptk, sizeof (WPA_PTK)));
+  EXPECT_NE (0, CompareMem (Ptk1, Private.PtkRaw, WPA_PTK_LEN));
 }
 
 TEST_F (WpaPtkDerivationTest, NoPmkFails)
@@ -236,10 +236,10 @@ TEST_F (WpaPtkDerivationTest, NoPmkFails)
 TEST_F (WpaPtkDerivationTest, AddressSymmetry)
 {
   // PTK derivation sorts addresses - swapping STA/AP should produce same PTK
-  WPA_PTK  Ptk1;
+  UINT8  Ptk1[WPA_PTK_LEN];
 
   EXPECT_TRUE (WpaDerivePtk (&Private));
-  CopyMem (&Ptk1, &Private.Ptk, sizeof (WPA_PTK));
+  CopyMem (Ptk1, Private.PtkRaw, WPA_PTK_LEN);
 
   // Swap addresses
   UINT8  Tmp[6];
@@ -248,7 +248,7 @@ TEST_F (WpaPtkDerivationTest, AddressSymmetry)
   CopyMem (Private.TargetBssid.Addr, Tmp, 6);
 
   EXPECT_TRUE (WpaDerivePtk (&Private));
-  EXPECT_EQ (0, CompareMem (&Ptk1, &Private.Ptk, sizeof (WPA_PTK)));
+  EXPECT_EQ (0, CompareMem (Ptk1, Private.PtkRaw, WPA_PTK_LEN));
 }
 
 // ==========================================================================
@@ -276,7 +276,7 @@ TEST_F (WpaEapolResetTest, ResetClearsState)
   Private.PaeState     = Authenticated;
   SetMem (Private.ANonce, WPA_NONCE_LEN, 0xFF);
   SetMem (Private.SNonce, WPA_NONCE_LEN, 0xFF);
-  SetMem (&Private.Ptk, sizeof (WPA_PTK), 0xFF);
+  SetMem (Private.PtkRaw, WPA_PTK_LEN, 0xFF);
 
   WpaEapolReset (&Private);
 
@@ -294,9 +294,9 @@ TEST_F (WpaEapolResetTest, ResetClearsState)
   EXPECT_EQ (0, CompareMem (Private.ANonce, ZeroNonce, WPA_NONCE_LEN));
   EXPECT_EQ (0, CompareMem (Private.SNonce, ZeroNonce, WPA_NONCE_LEN));
 
-  UINT8  ZeroPtk[sizeof (WPA_PTK)];
+  UINT8  ZeroPtk[WPA_PTK_LEN];
   ZeroMem (ZeroPtk, sizeof (ZeroPtk));
-  EXPECT_EQ (0, CompareMem (&Private.Ptk, ZeroPtk, sizeof (WPA_PTK)));
+  EXPECT_EQ (0, CompareMem (Private.PtkRaw, ZeroPtk, WPA_PTK_LEN));
 }
 
 TEST_F (WpaEapolResetTest, ResetNullIsSafe)
@@ -539,4 +539,168 @@ TEST_F (WpaFourWayHandshakeTest, NullParametersFail)
     WpaEapolProcessKeyFrame (&Private, NULL, sizeof (Msg), Resp, &RespSize));
   EXPECT_EQ (EFI_INVALID_PARAMETER,
     WpaEapolProcessKeyFrame (&Private, Msg, sizeof (Msg), Resp, NULL));
+}
+
+// ==========================================================================
+// TKIP 4-Way Handshake Tests (Key Descriptor Version 1: HMAC-MD5 + RC4)
+// ==========================================================================
+class WpaFourWayHandshakeTkipTest : public ::testing::Test {
+protected:
+  SUPPLICANT_PRIVATE_DATA  Private;
+
+  void SetUp () override
+  {
+    InitTestPrivateData (&Private);
+
+    // Configure TKIP pairwise cipher (WPA1)
+    Private.PairwiseCipherType = WPA_CIPHER_SUITE_TKIP;
+    Private.GroupCipherType    = WPA_CIPHER_SUITE_TKIP;
+    UpdateKeyDescVersion (&Private);
+
+    // Set password and SSID
+    const char  *Password = "tkiptestpass";
+    CopyMem (Private.Password, Password, AsciiStrLen (Password));
+    Private.Password[AsciiStrLen (Password)] = '\0';
+    Private.PasswordLen                      = AsciiStrLen (Password);
+
+    const char  *Ssid = "TkipNetwork";
+    CopyMem (Private.TargetSsid.SSId, Ssid, AsciiStrLen (Ssid));
+    Private.TargetSsid.SSIdLen = (UINT8)AsciiStrLen (Ssid);
+
+    UINT8  StaMac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x01 };
+    UINT8  ApMac[6]  = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x02 };
+    CopyMem (Private.StationMac.Addr, StaMac, 6);
+    CopyMem (Private.TargetBssid.Addr, ApMac, 6);
+  }
+
+  // Build a EAPOL-Key Message 1 with KeyDescVersion=1 (TKIP)
+  UINTN
+  BuildTkipMessage1 (
+    UINT8  *Buffer,
+    UINTN  BufferSize,
+    UINT8  *ANonce
+    )
+  {
+    EAPOL_HEADER     *EapolHdr;
+    EAPOL_KEY_FRAME  *KeyFrame;
+    UINTN            FrameSize;
+
+    FrameSize = sizeof (EAPOL_HEADER) + sizeof (EAPOL_KEY_FRAME);
+    if (BufferSize < FrameSize) {
+      return 0;
+    }
+
+    ZeroMem (Buffer, FrameSize);
+
+    EapolHdr                  = (EAPOL_HEADER *)Buffer;
+    EapolHdr->ProtocolVersion = EAPOL_VERSION_2;
+    EapolHdr->PacketType      = EAPOL_PACKET_TYPE_KEY;
+    WPA_PUT_BE16 (&EapolHdr->PacketBodyLength, (UINT16)sizeof (EAPOL_KEY_FRAME));
+
+    KeyFrame                 = (EAPOL_KEY_FRAME *)(Buffer + sizeof (EAPOL_HEADER));
+    KeyFrame->DescriptorType = EAPOL_KEY_DESC_TYPE_RSN;
+
+    // Version 1: HMAC-MD5 MIC, RC4 key data, Pairwise=1, Ack=1
+    UINT16  KeyInfo = WPA_KEY_INFO_KEY_TYPE | WPA_KEY_INFO_KEY_ACK;
+    KeyInfo |= WPA_KEY_DESC_VERSION_HMAC_MD5_RC4;
+    WPA_PUT_BE16 (&KeyFrame->KeyInformation, KeyInfo);
+    WPA_PUT_BE16 (&KeyFrame->KeyLength, WPA_TK_TKIP_LEN);
+
+    UINT8  ReplayCounter[8] = { 0, 0, 0, 0, 0, 0, 0, 1 };
+    CopyMem (KeyFrame->ReplayCounter, ReplayCounter, WPA_REPLAY_CTR_LEN);
+    CopyMem (KeyFrame->KeyNonce, ANonce, WPA_NONCE_LEN);
+    WPA_PUT_BE16 (&KeyFrame->KeyDataLength, 0);
+
+    return FrameSize;
+  }
+};
+
+TEST_F (WpaFourWayHandshakeTkipTest, KeyDescVersionIsOneForTkip)
+{
+  // UpdateKeyDescVersion sets version=1 (HMAC-MD5+RC4) for TKIP pairwise cipher
+  EXPECT_EQ (WPA_KEY_DESC_VERSION_HMAC_MD5_RC4, Private.KeyDescVersion);
+}
+
+TEST_F (WpaFourWayHandshakeTkipTest, TkipPtkDerivationProduces64Bytes)
+{
+  SetMem (Private.Pmk, WPA_PMK_LEN, 0xAA);
+  Private.PmkValid = TRUE;
+  SetMem (Private.ANonce, WPA_NONCE_LEN, 0xBB);
+  SetMem (Private.SNonce, WPA_NONCE_LEN, 0xCC);
+
+  EXPECT_TRUE (WpaDerivePtk (&Private));
+  EXPECT_EQ (WPA_KEY_DESC_VERSION_HMAC_MD5_RC4, Private.KeyDescVersion);
+
+  // Full 64-byte TKIP PTK (KCK+KEK+TK+TX-MIC+RX-MIC) should be non-zero
+  UINT8  ZeroPtk[WPA_PTK_TKIP_LEN];
+  ZeroMem (ZeroPtk, sizeof (ZeroPtk));
+  EXPECT_NE (0, CompareMem (Private.PtkRaw, ZeroPtk, WPA_PTK_TKIP_LEN));
+}
+
+TEST_F (WpaFourWayHandshakeTkipTest, TkipPtkIsDeterministic)
+{
+  SetMem (Private.Pmk, WPA_PMK_LEN, 0xAA);
+  Private.PmkValid = TRUE;
+  SetMem (Private.ANonce, WPA_NONCE_LEN, 0xBB);
+  SetMem (Private.SNonce, WPA_NONCE_LEN, 0xCC);
+
+  UINT8  Ptk1[WPA_PTK_TKIP_LEN];
+
+  EXPECT_TRUE (WpaDerivePtk (&Private));
+  CopyMem (Ptk1, Private.PtkRaw, WPA_PTK_TKIP_LEN);
+
+  EXPECT_TRUE (WpaDerivePtk (&Private));
+
+  EXPECT_EQ (0, CompareMem (Ptk1, Private.PtkRaw, WPA_PTK_TKIP_LEN));
+}
+
+TEST_F (WpaFourWayHandshakeTkipTest, TkipMsg1ProducesMsg2WithHmacMd5Mic)
+{
+  UINT8  Msg1[512];
+  UINT8  ANonce[WPA_NONCE_LEN];
+  UINT8  Response[512];
+  UINTN  ResponseSize = sizeof (Response);
+
+  SetMem (ANonce, WPA_NONCE_LEN, 0x42);
+  UINTN  Msg1Size = BuildTkipMessage1 (Msg1, sizeof (Msg1), ANonce);
+  ASSERT_GT (Msg1Size, (UINTN)0);
+
+  EFI_STATUS  Status = WpaEapolProcessKeyFrame (
+                          &Private,
+                          Msg1,
+                          Msg1Size,
+                          Response,
+                          &ResponseSize
+                          );
+
+  EXPECT_EQ (EFI_SUCCESS, Status);
+  EXPECT_GT (ResponseSize, (UINTN)0);
+
+  // Verify state machine advanced correctly
+  EXPECT_EQ (Wpa4WayMsg1Received, Private.FourWayState);
+  EXPECT_TRUE (Private.PtkValid);
+
+  // Full 64-byte TKIP PTK should be non-zero
+  UINT8  ZeroPtk[WPA_PTK_TKIP_LEN];
+  ZeroMem (ZeroPtk, sizeof (ZeroPtk));
+  EXPECT_NE (0, CompareMem (Private.PtkRaw, ZeroPtk, WPA_PTK_TKIP_LEN));
+
+  // Verify Message 2 structure
+  ASSERT_GE (ResponseSize, sizeof (EAPOL_HEADER) + sizeof (EAPOL_KEY_FRAME));
+
+  EAPOL_KEY_FRAME  *RespKey     = (EAPOL_KEY_FRAME *)(Response + sizeof (EAPOL_HEADER));
+  UINT16            RespKeyInfo = WPA_GET_BE16 (&RespKey->KeyInformation);
+
+  // Msg2: Pairwise=1, MIC=1, KeyDescVersion=1
+  EXPECT_TRUE ((RespKeyInfo & WPA_KEY_INFO_KEY_TYPE) != 0);
+  EXPECT_TRUE ((RespKeyInfo & WPA_KEY_INFO_KEY_MIC) != 0);
+  EXPECT_EQ (
+    (UINT16)WPA_KEY_DESC_VERSION_HMAC_MD5_RC4,
+    RespKeyInfo & WPA_KEY_INFO_KEY_DESC_VERSION_MASK
+    );
+
+  // MIC (16 bytes of HMAC-MD5) must be non-zero
+  UINT8  ZeroMic[WPA_MIC_LEN];
+  ZeroMem (ZeroMic, sizeof (ZeroMic));
+  EXPECT_NE (0, CompareMem (RespKey->KeyMic, ZeroMic, WPA_MIC_LEN));
 }
