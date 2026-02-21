@@ -12,6 +12,7 @@ and WPA3-Personal (SAE) authentication, producing `gEfiSupplicantProtocolGuid`.
 | [crypto.md](crypto.md) | Cryptographic primitives: AES-CMAC, HMAC-SHA1, PRF, KDF, CCMP, TKIP, WEP, RC4 |
 | [eapol.md](eapol.md) | IEEE 802.11 4-Way and Group Key Handshake state machine |
 | [sae.md](sae.md) | SAE (Dragonfly) Commit/Confirm exchange, ECC Group 19 |
+| [call-traces.md](call-traces.md) | WPA1/2/3 end-to-end call traces: SetData → SAE → 4-Way Handshake → ProcessPacket |
 | [testing.md](testing.md) | Unit-test catalogue, build/run instructions, native macOS harness |
 
 ## Quick Build Reference
